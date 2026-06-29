@@ -1,0 +1,6 @@
+dataset,row_index,error,timestamp
+raw_cell_towers,1925,Duplicate composite key mcc+net+area+cell,2026-06-27 18:14:01
+raw_cell_towers,2781,Duplicate composite key mcc+net+area+cell,2026-06-27 18:14:01
+raw_cell_towers,2877,Duplicate composite key mcc+net+area+cell,2026-06-27 18:14:01
+raw_cell_towers,2916,Duplicate composite key mcc+net+area+cell,2026-06-27 18:14:01
+raw_cell_towers,2917,Duplicate composite key mcc+net+area+cell,2026-06-27 18:14:01
