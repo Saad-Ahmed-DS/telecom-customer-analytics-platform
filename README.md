@@ -352,19 +352,19 @@ The dashboards are connected directly to the PostgreSQL Data Warehouse.
 
 ## Physical Data Model
 
-![Data Model](images/Data%20Model.png.png)
+![Data Model](images/data_model.png)
 
 ---
 
 ## Semantic Model
 
-![Semantic Model](images/Sementic%20model.png.png)
+![Semantic Model](images/data_tables.png)
 
 ---
 
 ## Source Tables
 
-![Source Tables](images/data%20tables.png.png)
+![Source Tables](images/semantic_model.png)
 
 ---
 
