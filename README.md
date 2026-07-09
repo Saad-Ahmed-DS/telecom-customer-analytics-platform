@@ -352,19 +352,19 @@ The dashboards are connected directly to the PostgreSQL Data Warehouse.
 
 ## Physical Data Model
 
-![Data Model](images/Data%20Model.png.png)
+![Data Model](images/data_model.png)
 
 ---
 
 ## Semantic Model
 
-![Semantic Model](images/Sementic%20model.png.png)
+![Semantic Model](images/semantic_model.png)
 
 ---
 
 ## Source Tables
 
-![Source Tables](images/data%20tables.png.png)
+![Source Tables](images/data_table.png)
 
 ---
 
@@ -478,30 +478,34 @@ The best-performing model is XGBoost.
 
 ## Model Performance
 
-| Metric | Random Forest | XGBoost |
-|---------|--------------:|---------:|
-| Accuracy | 93.97% | 93.54% |
-| Precision | 90.48% | 87.73% |
-| Recall | 86.36% | 87.97% |
-| F1 Score | 88.37% | 87.85% |
-| ROC AUC | 96.94% | **98.31%** |
+| Metric | **Random Forest (Best)** | XGBoost |
+|--------|--------------------------|---------|
+| Accuracy | **80.34%** | 79.99% |
+| Precision | **69.32%** | 66.20% |
+| Recall | 46.52% | **50.27%** |
+| F1 Score | 55.68% | **57.14%** |
+| **ROC AUC** | **84.13%** | 83.71% |
 
----
+> **Data Leakage Fix:** `churn_score` was intentionally excluded from all models.
+> It is IBM's pre-computed propensity score derived from the actual churn outcome,
+> causing data leakage (correlation with churn_flag = 0.665).
+> Including it artificially inflated ROC AUC to 98.31%.
+> The numbers above reflect a clean, production-honest model.
 
-## Top Predictive Features
+## Top Churn Predictors
 
-1. Churn Score
-2. Contract Type
-3. Tenure
-4. Total Charges
-5. Monthly Charges
-6. Internet Service
-7. Payment Method
-8. Tech Support
-9. Online Security
-10. Customer Lifetime Value
-
----
+| Rank | Feature | Importance |
+|------|---------|-----------|
+| 1 | Tenure Months | 9.5% |
+| 2 | Contract Type | 9.5% |
+| 3 | Total Charges | 8.2% |
+| 4 | Monthly Charges | 7.0% |
+| 5 | Online Security | 5.1% |
+| 6 | Tech Support | 4.5% |
+| 7 | Data Usage GB | 4.3% |
+| 8 | Customer Segment | 4.0% |
+| 9 | CLTV | 3.8% |
+| 10 | Signal Strength | 3.8% |
 
 ## Machine Learning Outputs
 
@@ -551,3 +555,519 @@ Rejected records are stored inside:
 ```
 logs/rejected_records.csv
 ```
+---
+
+# ⚙️ Setup & Reproduction
+
+This section explains how to reproduce the complete project from scratch.
+
+---
+
+## Prerequisites
+
+Before running the project, install the following software:
+
+| Software | Version |
+|-----------|---------|
+| PostgreSQL | 17+ |
+| Python | 3.11+ |
+| Power BI Desktop | Latest |
+| Git | Latest |
+| Visual Studio Code | Recommended |
+
+---
+
+# 1. Clone the Repository
+
+```bash
+git clone https://github.com/Saad-Ahmed-DS/telecom-customer-analytics-platform.git
+
+cd telecom-customer-analytics-platform
+```
+
+---
+
+# 2. Install Python Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+# 3. Configure Environment Variables
+
+Create a file named
+
+```
+.env
+```
+
+inside the project root.
+
+Example:
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=telecom_dw
+DB_USER=postgres
+DB_PASSWORD=your_password_here
+```
+
+> **Important**
+>
+> Never commit the `.env` file to GitHub.
+>
+> The repository already ignores it using `.gitignore`.
+
+---
+
+# 4. Create PostgreSQL Database
+
+Open pgAdmin or any PostgreSQL client.
+
+Run the SQL scripts located inside
+
+```
+database/
+```
+
+Execute them **in order**.
+
+```
+V001__create_database.sql
+
+↓
+
+V002__create_schemas.sql
+
+↓
+
+V003__create_dim_tables.sql
+
+↓
+
+V004__create_fact_tables.sql
+
+↓
+
+V005__create_indexes.sql
+
+↓
+
+V006__create_unknown_records.sql
+```
+
+After execution the warehouse contains:
+
+- Dimension tables
+- Fact tables
+- Indexes
+- Unknown Members
+- Schemas
+
+---
+
+# 5. Run the ETL Pipeline
+
+Execute each ETL layer in sequence.
+
+### Bronze Layer
+
+```bash
+python etl/bronze/ingest_raw.py
+```
+
+Purpose
+
+- Load raw files
+- Preserve original data
+- No transformations
+
+---
+
+### Silver Layer
+
+```bash
+python etl/silver/clean_data.py
+```
+
+Purpose
+
+- Remove duplicates
+- Handle NULL values
+- Standardize values
+- Validate business rules
+
+---
+
+### Gold Layer
+
+Load Dimensions
+
+```bash
+python etl/gold/load_dimensions.py
+```
+
+Load Facts
+
+```bash
+python etl/gold/load_facts.py
+```
+
+Purpose
+
+- Populate Star Schema
+- Generate surrogate keys
+- Maintain referential integrity
+
+---
+
+# 6. Execute SQL Analytics
+
+Run every SQL script inside
+
+```
+sql/
+```
+
+in sequence.
+
+```
+V001
+
+↓
+
+V002
+
+↓
+
+V003
+
+↓
+
+V004
+
+↓
+
+V005
+
+↓
+
+V006
+
+↓
+
+V007
+
+↓
+
+V008
+
+↓
+
+V009
+```
+
+These scripts create:
+
+- Analytical Views
+- KPIs
+- Business Reports
+- Executive Metrics
+
+---
+
+# 7. Train Machine Learning Model
+
+Run
+
+```bash
+python ml/churn_model.py
+```
+
+Outputs generated:
+
+```
+ml/
+└── outputs/
+    ├── churn_model.pkl
+    ├── model_results.csv
+    └── feature_importance.csv
+```
+
+---
+
+# 8. Open Power BI Dashboard
+
+Open
+
+```
+powerbi/
+```
+
+Load
+
+```
+telecom_dashboard.pbix
+```
+
+Update the PostgreSQL connection if required.
+
+Refresh the dataset.
+
+The dashboard will automatically use the latest warehouse data.
+
+---
+
+# 🎯 Key Design Decisions
+
+## Medallion Architecture
+
+The project follows the Bronze → Silver → Gold architecture.
+
+Advantages
+
+- Clean separation of layers
+- Easier debugging
+- Better maintainability
+- Industry-standard architecture
+
+---
+
+## Star Schema
+
+A Star Schema was chosen because it provides
+
+- Faster reporting
+- Simpler SQL
+- Better Power BI performance
+- Easier business understanding
+
+---
+
+## Surrogate Keys
+
+Every dimension uses surrogate keys generated by PostgreSQL.
+
+Benefits
+
+- Stable joins
+- Better performance
+- Simplified Slowly Changing Dimensions
+- Independent from source systems
+
+---
+
+## Unknown Members
+
+Every dimension includes an Unknown Record.
+
+Benefits
+
+- No NULL foreign keys
+- Referential integrity
+- Cleaner ETL processing
+
+---
+
+## Modular SQL
+
+SQL scripts are versioned.
+
+Example
+
+```
+V001__
+
+V002__
+
+V003__
+```
+
+Benefits
+
+- Easier deployment
+- Better version control
+- Repeatable builds
+
+---
+
+# 📈 Business Insights
+
+Example insights generated by the platform include:
+
+- Month-to-month contracts exhibit the highest churn rate.
+- Fiber Optic customers generate the highest revenue but also show elevated churn risk.
+- Longer customer tenure is associated with significantly lower churn probability.
+- Customers with high churn scores represent substantial revenue at risk.
+- Poor network quality is correlated with increased customer churn.
+- Electronic check users display higher churn compared to automatic payment methods.
+- Premium contract plans contribute disproportionately to overall revenue.
+- Support ticket volume can be used as an early indicator of potential churn.
+
+---
+
+# 🚀 Future Improvements
+
+Potential future enhancements include:
+
+- Apache Airflow orchestration
+- Docker containerization
+- CI/CD using GitHub Actions
+- Azure Data Factory pipelines
+- Snowflake Data Warehouse
+- Microsoft Fabric integration
+- Real-time Kafka ingestion
+- Streaming analytics
+- REST API layer
+- Automated report deployment
+
+---
+
+# 👤 Author
+
+**Saad Ahmed**
+
+This project was developed as a flagship portfolio project to demonstrate practical skills in:
+
+- Data Engineering
+- Data Warehousing
+- SQL Analytics
+- Business Intelligence
+- Machine Learning
+
+GitHub
+
+https://github.com/Saad-Ahmed-DS
+
+Repository
+
+https://github.com/Saad-Ahmed-DS/telecom-customer-analytics-platform
+
+---
+
+# 📄 License
+
+This project is intended for educational and portfolio purposes.
+
+Datasets used include publicly available sources such as:
+
+- IBM Telco Customer Churn
+- Pakistan Cities Dataset
+- OpenCelliD
+
+All trademarks and datasets remain the property of their respective owners.
+
+---
+
+# ⭐ Recommended GitHub Repository Topics
+
+Add the following topics to your GitHub repository.
+
+```
+data-engineering
+
+postgresql
+
+python
+
+etl
+
+sql
+
+analytics
+
+business-intelligence
+
+powerbi
+
+machine-learning
+
+xgboost
+
+star-schema
+
+data-warehouse
+
+telecom
+```
+
+---
+
+# 🔒 Security
+
+The `.env` file is intentionally excluded from version control.
+
+If it has accidentally been committed previously, remove it using:
+
+```bash
+git rm --cached .env
+
+git commit -m "Remove .env from repository"
+
+git push
+```
+
+If your `.env` contained real passwords or credentials, rotate those credentials immediately.
+
+---
+
+# 📤 GitHub Workflow
+
+After making changes to the project:
+
+Check status
+
+```bash
+git status
+```
+
+Stage files
+
+```bash
+git add .
+```
+
+Commit changes
+
+```bash
+git commit -m "Describe your changes"
+```
+
+Push to GitHub
+
+```bash
+git push
+```
+
+View configured remote
+
+```bash
+git remote -v
+```
+
+View commit history
+
+```bash
+git log --oneline
+```
+
+Check current branch
+
+```bash
+git branch
+```
+
+---
+
+# 🎉 Acknowledgements
+
+Special thanks to the providers of the publicly available datasets and the open-source tools that made this project possible.
+
+This repository demonstrates an end-to-end analytics workflow inspired by real-world enterprise data platforms and is intended to showcase practical experience in building modern data engineering and business intelligence solutions.
+
+---
+
+## ⭐ If you found this project interesting, consider giving it a star on GitHub!

@@ -1,8 +1,16 @@
 # ============================================================
 # Telecom Customer Analytics & Churn Intelligence Platform
 # Machine Learning: Churn Prediction Model
-# Source: gold.vw_ml_features
-# Algorithm: Random Forest + XGBoost
+# Version: 2.0 — Leakage Fixed
+# Changes:
+#   - churn_score REMOVED from features (data leakage)
+#     Reason: IBM pre-computed propensity score derived from
+#     actual churn outcome. Correlation with churn_flag = 0.665
+#     Including it inflated ROC AUC from ~0.82 to 0.98
+#   - Model selection criterion: ROC AUC (documented below)
+#     Business rationale: ROC AUC measures overall discrimination
+#     ability across all thresholds. For churn use cases where
+#     retention budget is limited, Recall is also tracked.
 # ============================================================
 
 import pandas as pd
@@ -12,7 +20,7 @@ import os
 import pickle
 from datetime import datetime
 
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
@@ -22,7 +30,6 @@ from sklearn.metrics import (
 )
 from xgboost import XGBClassifier
 
-# Add parent etl directory to path for config
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'etl'))
 from config import get_engine
 
@@ -39,11 +46,17 @@ def load_features(engine):
     log("Loading features from gold.vw_ml_features...")
     df = pd.read_sql('SELECT * FROM gold.vw_ml_features', engine)
     log(f"Loaded {len(df)} rows and {df.shape[1]} columns")
+    log(f"Columns: {list(df.columns)}")
     return df
 
 # ── Step 2: Preprocess ────────────────────────────────────────
 def preprocess(df):
     log("Preprocessing features...")
+
+    # Verify churn_score is NOT in features
+    if 'churn_score' in df.columns:
+        log("WARNING: churn_score detected — removing to prevent data leakage")
+        df = df.drop(columns=['churn_score'])
 
     # Drop identifier
     df = df.drop(columns=['customer_id'])
@@ -63,22 +76,19 @@ def preprocess(df):
             df[col] = le.fit_transform(df[col].astype(str))
 
     # Target
-    # Handle NaN values
     X = df.drop(columns=['churn_flag'])
     y = df['churn_flag']
 
-    # Fill numeric NaNs with median
+    # Handle NaN values
     num_cols = X.select_dtypes(include=np.number).columns
     X[num_cols] = X[num_cols].fillna(X[num_cols].median())
-
-    # Fill categorical NaNs with mode
-    cat_cols_remaining = X.select_dtypes(include='object').columns
-    for col in cat_cols_remaining:
+    for col in X.select_dtypes(include='object').columns:
         if not X[col].mode().empty:
             X[col] = X[col].fillna(X[col].mode()[0])
 
     log(f"Features: {X.shape[1]} columns")
     log(f"Target distribution: {y.value_counts().to_dict()}")
+    log(f"Feature list: {list(X.columns)}")
 
     return X, y
 
@@ -120,7 +130,7 @@ def train_random_forest(X_train, X_test, y_train, y_test):
     log("\nTraining Random Forest...")
 
     rf = RandomForestClassifier(
-        n_estimators = 100,
+        n_estimators = 200,
         max_depth    = 10,
         random_state = 42,
         n_jobs       = -1
@@ -129,7 +139,6 @@ def train_random_forest(X_train, X_test, y_train, y_test):
 
     results = evaluate_model('Random Forest', rf, X_test, y_test)
 
-    # Feature importance
     importance_df = pd.DataFrame({
         'Feature'   : X_train.columns,
         'Importance': rf.feature_importances_
@@ -145,12 +154,13 @@ def train_xgboost(X_train, X_test, y_train, y_test):
     log("\nTraining XGBoost...")
 
     xgb = XGBClassifier(
-        n_estimators  = 100,
-        max_depth     = 6,
-        learning_rate = 0.1,
-        random_state  = 42,
-        eval_metric   = 'logloss',
-        verbosity     = 0
+        n_estimators  = 200,
+        max_depth      = 6,
+        learning_rate  = 0.05,
+        subsample      = 0.8,
+        random_state   = 42,
+        eval_metric    = 'logloss',
+        verbosity      = 0
     )
     xgb.fit(X_train, y_train)
 
@@ -162,14 +172,17 @@ def train_xgboost(X_train, X_test, y_train, y_test):
 def save_best_model(rf_results, xgb_results, rf_model, xgb_model, importance_df):
     log("\nComparing models...")
 
+    # Model selection criterion: ROC AUC
+    # Rationale: measures overall discrimination across all thresholds
+    # Alternative: use Recall if maximizing churn catch rate is priority
     if xgb_results['ROC AUC'] >= rf_results['ROC AUC']:
-        best_model  = xgb_model
-        best_name   = 'XGBoost'
-        best_results= xgb_results
+        best_model   = xgb_model
+        best_name    = 'XGBoost'
+        best_results = xgb_results
     else:
-        best_model  = rf_model
-        best_name   = 'Random Forest'
-        best_results= rf_results
+        best_model   = rf_model
+        best_name    = 'Random Forest'
+        best_results = rf_results
 
     log(f"Best Model: {best_name} (ROC AUC: {best_results['ROC AUC']})")
 
@@ -179,7 +192,7 @@ def save_best_model(rf_results, xgb_results, rf_model, xgb_model, importance_df)
         pickle.dump(best_model, f)
     log(f"Model saved to {model_path}")
 
-    # Save results
+    # Save results comparison
     results_df = pd.DataFrame([rf_results, xgb_results])
     results_path = os.path.join(MODEL_DIR, 'model_results.csv')
     results_df.to_csv(results_path, index=False)
@@ -194,32 +207,34 @@ def save_best_model(rf_results, xgb_results, rf_model, xgb_model, importance_df)
 
 # ── Main ──────────────────────────────────────────────────────
 def main():
-    log("Machine Learning — Churn Prediction Started")
-    log("=" * 55)
+    log("Machine Learning — Churn Prediction v2.0 (Leakage Fixed)")
+    log("=" * 60)
+    log("NOTE: churn_score excluded — data leakage prevention")
+    log("NOTE: Geographic/network metrics are synthetic — illustrative only")
+    log("=" * 60)
 
     engine = get_engine()
 
-    # Load and preprocess
-    df              = load_features(engine)
-    X, y            = preprocess(df)
+    df                               = load_features(engine)
+    X, y                             = preprocess(df)
     X_train, X_test, y_train, y_test = split_data(X, y)
 
-    # Train models
     rf_model,  rf_results,  importance_df = train_random_forest(X_train, X_test, y_train, y_test)
     xgb_model, xgb_results               = train_xgboost(X_train, X_test, y_train, y_test)
 
-    # Save best
     best_name, best_results = save_best_model(
         rf_results, xgb_results,
         rf_model, xgb_model,
         importance_df
     )
 
-    log("=" * 55)
-    log(f"ML Phase Complete — Best Model: {best_name}")
-    log(f"ROC AUC  : {best_results['ROC AUC']}")
-    log(f"F1 Score : {best_results['F1 Score']}")
-    log(f"Accuracy : {best_results['Accuracy']}")
+    log("=" * 60)
+    log(f"ML Phase Complete — Best Model : {best_name}")
+    log(f"ROC AUC   : {best_results['ROC AUC']}")
+    log(f"F1 Score  : {best_results['F1 Score']}")
+    log(f"Accuracy  : {best_results['Accuracy']}")
+    log(f"Recall    : {best_results['Recall']}")
+    log(f"Precision : {best_results['Precision']}")
 
 if __name__ == '__main__':
     main()

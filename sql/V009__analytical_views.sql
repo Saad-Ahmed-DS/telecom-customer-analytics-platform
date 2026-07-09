@@ -30,6 +30,8 @@ SELECT
     fcs.monthly_charge,
     fcs.total_charge,
     fcs.cltv,
+    -- churn_score retained here for REFERENCE/SEGMENTATION only
+    -- NOT used in ML model — it is IBM's pre-computed propensity score
     fcs.churn_score,
     fcs.churn_flag,
     fcs.churn_reason,
@@ -65,11 +67,15 @@ SELECT
     fcs.monthly_charge,
     fcs.total_charge,
     fcs.cltv,
+    -- churn_score retained for BI dashboards/segmentation only
+    -- confirmed leaky for ML — excluded from vw_ml_features
     fcs.churn_score,
     fcs.churn_flag,
     fcs.churn_reason,
     fcs.customer_segment,
     fcs.revenue_category,
+    -- NOTE: network_score is synthetically generated (random inputs)
+    -- shown for illustrative purposes only — not real signal
     fcs.network_score,
     fcs.signal_strength,
     fcs.data_usage_gb
@@ -80,6 +86,8 @@ WHERE fcs.customer_key != -1;
 
 -- ------------------------------------------------------------
 -- 3. Revenue View
+-- NOTE: snapshot dates are derived from customer tenure
+-- relative to base_date 2025-01-01 — not real billing history
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW gold.vw_revenue AS
 SELECT
@@ -111,6 +119,11 @@ GROUP BY
 
 -- ------------------------------------------------------------
 -- 4. Network Performance View
+-- NOTE: signal_strength, latency_ms, packet_loss_percent,
+-- downtime_minutes are synthetically generated (random values)
+-- network_score is derived from these synthetic inputs
+-- Geographic data is randomly assigned — not real customer locations
+-- All network visuals are ILLUSTRATIVE ONLY
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW gold.vw_network_performance AS
 SELECT
@@ -124,6 +137,7 @@ SELECT
     ROUND(AVG(fcs.packet_loss_percent), 2)      AS avg_packet_loss_pct,
     ROUND(AVG(fcs.downtime_minutes), 2)         AS avg_downtime_minutes,
     ROUND(AVG(fcs.network_score), 2)            AS avg_network_score,
+    -- churn_score kept here for BI reference only — not ML input
     ROUND(AVG(fcs.churn_score), 2)              AS avg_churn_score
 FROM gold.fact_customer_snapshot fcs
 JOIN gold.dim_tower dt   ON fcs.tower_key = dt.tower_key
@@ -188,6 +202,11 @@ GROUP BY
 
 -- ------------------------------------------------------------
 -- 7. ML Feature View (for Machine Learning)
+-- FIXES APPLIED:
+--   - churn_score REMOVED (data leakage — IBM pre-computed propensity score)
+--   - cltv RETAINED (weak correlation -0.127, acceptable risk, documented)
+--   - network/usage metrics RETAINED (synthetic but structurally valid)
+--   - churn_flag is the ONLY target variable
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW gold.vw_ml_features AS
 SELECT
@@ -211,7 +230,10 @@ SELECT
     fcs.monthly_charge,
     fcs.total_charge,
     fcs.cltv,
-    fcs.churn_score,
+    -- churn_score INTENTIONALLY EXCLUDED
+    -- Reason: IBM pre-computed propensity score derived from actual churn outcome
+    -- Including it causes data leakage (correlation with churn_flag = 0.665)
+    -- ROC AUC inflated from ~0.82 to 0.98 when included
     fcs.data_usage_gb,
     fcs.voice_minutes,
     fcs.sms_count,
@@ -238,4 +260,5 @@ SELECT table_name
 FROM information_schema.views
 WHERE table_schema = 'gold'
 ORDER BY table_name;
+
 
